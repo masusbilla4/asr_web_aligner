@@ -1,0 +1,4 @@
+flask
+openpyxl
+google-genai
+gunicorn
