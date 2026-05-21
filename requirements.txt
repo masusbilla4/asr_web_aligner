@@ -2,3 +2,4 @@ flask
 openpyxl
 google-genai
 gunicorn
+numpy
