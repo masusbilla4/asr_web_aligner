@@ -510,6 +510,35 @@ function clearAll() {
 }
 
 // Run alignment
+async function pollAlignResult() {
+    while (true) {
+        try {
+            const res = await fetch('/api/align-result');
+            const data = await res.json();
+            if (data.done) {
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    setProgress(0, '❌ Alignment failed');
+                } else {
+                    alignmentData = data.result.alignment_data;
+                    overallWer = data.result.overall_wer;
+                    overallStats = data.result.overall_stats;
+                    setProgress(100, `✅ Alignment completed — Overall WER: ${overallWer}%`);
+                    document.getElementById('btnResults').disabled = false;
+                    showToast(`Alignment complete! WER: ${overallWer}%`);
+                    renderResults();
+                }
+                return;
+            }
+        } catch (e) {
+            showToast('Polling error: ' + e.message, 'error');
+            setProgress(0, '❌ Alignment failed');
+            return;
+        }
+        await new Promise(r => setTimeout(r, 2000));
+    }
+}
+
 async function runAlignment() {
     const trueText = document.getElementById('trueText').value.trim();
     const asrText = document.getElementById('asrText').value.trim();
@@ -552,6 +581,10 @@ async function runAlignment() {
         if (data.error) {
             showToast(data.error, 'error');
             setProgress(0, '❌ Alignment failed');
+        } else if (data.status === 'started') {
+            // Async mode - poll for results
+            setProgress(30, '⏳ Processing alignment...');
+            await pollAlignResult();
         } else {
             alignmentData = data.alignment_data;
             overallWer = data.overall_wer;

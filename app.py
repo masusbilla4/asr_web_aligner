@@ -108,6 +108,15 @@ def index():
     return render_template("index.html")
 
 
+# --- Store for async align results ---
+_align_store = {
+    "result": None,
+    "error": None,
+    "done": False,
+    "task_id": 0
+}
+
+
 @app.route("/api/align", methods=["POST"])
 def api_align():
     data = request.json
@@ -131,11 +140,35 @@ def api_align():
                 "message": f"Significant word count mismatch: True Text={ref_wc}, ASR={hyp_wc}, Ratio={ratio:.1f}x. Results may be inaccurate."
             })
 
-    try:
-        result = run_alignment(true_lines, asr_lines)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Run alignment in background thread to avoid Render timeout
+    _align_store["result"] = None
+    _align_store["error"] = None
+    _align_store["done"] = False
+    _align_store["task_id"] += 1
+    task_id = _align_store["task_id"]
+
+    def _run():
+        try:
+            result = run_alignment(true_lines, asr_lines)
+            _align_store["result"] = result
+            _align_store["done"] = True
+        except Exception as e:
+            _align_store["error"] = str(e)
+            _align_store["done"] = True
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({"status": "started", "task_id": task_id})
+
+
+@app.route("/api/align-result")
+def api_align_result():
+    """Poll for async alignment result."""
+    if _align_store["done"]:
+        if _align_store["error"]:
+            return jsonify({"done": True, "error": _align_store["error"]})
+        return jsonify({"done": True, "result": _align_store["result"]})
+    return jsonify({"done": False})
 
 
 @app.route("/api/align-force", methods=["POST"])
@@ -148,11 +181,25 @@ def api_align_force():
     true_lines = [l.strip() for l in true_text.split("\n") if l.strip()]
     asr_lines = [l.rstrip() for l in asr_text.splitlines() if l.strip()]
 
-    try:
-        result = run_alignment(true_lines, asr_lines)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Run alignment in background thread to avoid Render timeout
+    _align_store["result"] = None
+    _align_store["error"] = None
+    _align_store["done"] = False
+    _align_store["task_id"] += 1
+    task_id = _align_store["task_id"]
+
+    def _run():
+        try:
+            result = run_alignment(true_lines, asr_lines)
+            _align_store["result"] = result
+            _align_store["done"] = True
+        except Exception as e:
+            _align_store["error"] = str(e)
+            _align_store["done"] = True
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({"status": "started", "task_id": task_id})
 
 
 @app.route("/api/align-translation-local", methods=["POST"])
