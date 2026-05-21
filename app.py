@@ -516,6 +516,15 @@ Return ONLY valid JSON with exactly {len(sentences)} evaluations."""
     })
 
 
+# --- Store for async reevaluate results ---
+_reeval_store = {
+    "result": None,
+    "error": None,
+    "done": False,
+    "task_id": 0
+}
+
+
 @app.route("/api/reevaluate", methods=["POST"])
 def api_reevaluate():
     """Re-run local diff/WER calculation on (possibly edited) alignment data."""
@@ -524,43 +533,70 @@ def api_reevaluate():
     if not alignment_data:
         return jsonify({"error": "No data to re-evaluate."}), 400
 
-    total_subs = 0; total_dels = 0; total_ins = 0; total_refs = 0
+    # Run in background thread to avoid Render timeout
+    _reeval_store["result"] = None
+    _reeval_store["error"] = None
+    _reeval_store["done"] = False
+    _reeval_store["task_id"] += 1
+    task_id = _reeval_store["task_id"]
 
-    for d in alignment_data:
-        true_text = d.get("true", "")
-        asr_text = d.get("asr_nobreak", "") or d.get("asr", "")
-        true_words = true_text.split()
-        asr_words = asr_text.split()
-        d["count"] = len(true_words)
+    def _run():
+        try:
+            total_subs = 0; total_dels = 0; total_ins = 0; total_refs = 0
 
-        # Re-run diff
-        result = run_alignment([true_text], [asr_text])
-        if result["alignment_data"]:
-            rd = result["alignment_data"][0]
-            d["diffs"] = rd.get("diffs", [])
-            d["wrong_count"] = rd.get("wrong_count", 0)
-            d["wrong_list"] = rd.get("wrong_list", "")
-            d["wer"] = rd.get("wer", 0)
-            d["srr"] = rd.get("srr", "")
-            d["score"] = rd.get("score", "")
-            d["asr_displayed"] = rd.get("asr_displayed", asr_text)
-            d["asr_separated"] = rd.get("asr_separated", asr_text)
-            d["asr_nobreak"] = rd.get("asr_nobreak", asr_text)
+            for d in alignment_data:
+                true_text = d.get("true", "")
+                asr_text = d.get("asr_nobreak", "") or d.get("asr", "")
+                true_words = true_text.split()
+                asr_words = asr_text.split()
+                d["count"] = len(true_words)
 
-        total_refs += len(true_words)
-        stats = result.get("overall_stats", {})
-        total_subs += stats.get("subs", 0)
-        total_dels += stats.get("dels", 0)
-        total_ins += stats.get("ins", 0)
+                # Re-run diff
+                result = run_alignment([true_text], [asr_text])
+                if result["alignment_data"]:
+                    rd = result["alignment_data"][0]
+                    d["diffs"] = rd.get("diffs", [])
+                    d["wrong_count"] = rd.get("wrong_count", 0)
+                    d["wrong_list"] = rd.get("wrong_list", "")
+                    d["wer"] = rd.get("wer", 0)
+                    d["srr"] = rd.get("srr", "")
+                    d["score"] = rd.get("score", "")
+                    d["asr_displayed"] = rd.get("asr_displayed", asr_text)
+                    d["asr_separated"] = rd.get("asr_separated", asr_text)
+                    d["asr_nobreak"] = rd.get("asr_nobreak", asr_text)
 
-    overall_wer = round((total_subs + total_dels + total_ins) / total_refs * 100, 1) if total_refs else 0
-    overall_stats = {"subs": total_subs, "dels": total_dels, "ins": total_ins, "refs": total_refs}
+                total_refs += len(true_words)
+                stats = result.get("overall_stats", {})
+                total_subs += stats.get("subs", 0)
+                total_dels += stats.get("dels", 0)
+                total_ins += stats.get("ins", 0)
 
-    return jsonify({
-        "alignment_data": alignment_data,
-        "overall_wer": overall_wer,
-        "overall_stats": overall_stats
-    })
+            overall_wer = round((total_subs + total_dels + total_ins) / total_refs * 100, 1) if total_refs else 0
+            overall_stats = {"subs": total_subs, "dels": total_dels, "ins": total_ins, "refs": total_refs}
+
+            _reeval_store["result"] = {
+                "alignment_data": alignment_data,
+                "overall_wer": overall_wer,
+                "overall_stats": overall_stats
+            }
+            _reeval_store["done"] = True
+        except Exception as e:
+            _reeval_store["error"] = str(e)
+            _reeval_store["done"] = True
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({"status": "started", "task_id": task_id})
+
+
+@app.route("/api/reevaluate-result")
+def api_reevaluate_result():
+    """Poll for async reevaluate result."""
+    if _reeval_store["done"]:
+        if _reeval_store["error"]:
+            return jsonify({"done": True, "error": _reeval_store["error"]})
+        return jsonify({"done": True, "result": _reeval_store["result"]})
+    return jsonify({"done": False})
 
 
 @app.route("/api/export-excel", methods=["POST"])

@@ -782,7 +782,7 @@ async function runAiEvaluation() {
     }
 }
 
-// Re-evaluate (recalculate diffs/WER after editing)
+// Re-evaluate (recalculate diffs/WER after editing) - now async with polling
 async function reevaluate() {
     if (!alignmentData.length) { showToast('No data to re-evaluate.', 'warning'); return; }
     setProgress(30, '⏳ Re-evaluating differences and scores...');
@@ -794,6 +794,24 @@ async function reevaluate() {
         });
         const data = await res.json();
         if (data.error) { showToast(data.error, 'error'); return; }
+        if (data.status === 'started') {
+            // Poll for result
+            while (true) {
+                const pollRes = await fetch('/api/reevaluate-result');
+                const pollData = await pollRes.json();
+                if (pollData.done) {
+                    if (pollData.error) { showToast(pollData.error, 'error'); setProgress(0, '❌ Re-evaluate failed'); return; }
+                    alignmentData = pollData.result.alignment_data;
+                    overallWer = pollData.result.overall_wer;
+                    overallStats = pollData.result.overall_stats;
+                    renderResults();
+                    setProgress(100, `✅ Re-evaluated — Overall WER: ${overallWer}%`);
+                    showToast(`Re-evaluated! WER: ${overallWer}%`);
+                    return;
+                }
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
         alignmentData = data.alignment_data;
         overallWer = data.overall_wer;
         overallStats = data.overall_stats;
