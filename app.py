@@ -108,6 +108,13 @@ def index():
     return render_template("index.html")
 
 
+# --- Server-side stored alignment data (avoids large request bodies) ---
+_stored_alignment = {
+    "data": None,
+    "overall_wer": 0,
+    "overall_stats": {}
+}
+
 # --- Store for async align results ---
 _align_store = {
     "result": None,
@@ -167,7 +174,12 @@ def api_align_result():
     if _align_store["done"]:
         if _align_store["error"]:
             return jsonify({"done": True, "error": _align_store["error"]})
-        return jsonify({"done": True, "result": _align_store["result"]})
+        # Store alignment data server-side for re-evaluate/export
+        result = _align_store["result"]
+        _stored_alignment["data"] = result.get("alignment_data", [])
+        _stored_alignment["overall_wer"] = result.get("overall_wer", 0)
+        _stored_alignment["overall_stats"] = result.get("overall_stats", {})
+        return jsonify({"done": True, "result": result})
     return jsonify({"done": False})
 
 
@@ -525,13 +537,27 @@ _reeval_store = {
 }
 
 
+@app.route("/api/update-field", methods=["POST"])
+def api_update_field():
+    """Update a single field in stored alignment data (avoids large request bodies)."""
+    data = request.json
+    idx = data.get("idx")
+    field = data.get("field")
+    value = data.get("value")
+    if idx is None or not field:
+        return jsonify({"error": "idx and field required."}), 400
+    if _stored_alignment["data"] is None or idx >= len(_stored_alignment["data"]):
+        return jsonify({"error": "No stored data or invalid index."}), 400
+    _stored_alignment["data"][idx][field] = value
+    return jsonify({"ok": True})
+
+
 @app.route("/api/reevaluate", methods=["POST"])
 def api_reevaluate():
-    """Re-run local diff/WER calculation on (possibly edited) alignment data."""
-    data = request.json
-    alignment_data = data.get("alignment_data", [])
+    """Re-run local diff/WER calculation on server-side stored alignment data."""
+    alignment_data = _stored_alignment.get("data")
     if not alignment_data:
-        return jsonify({"error": "No data to re-evaluate."}), 400
+        return jsonify({"error": "No stored alignment data. Run alignment first."}), 400
 
     # Run in background thread to avoid Render timeout
     _reeval_store["result"] = None

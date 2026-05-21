@@ -647,7 +647,7 @@ function toggleResults() {
     sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
 }
 
-// Save edits from contenteditable cells back to alignmentData
+// Save edits from contenteditable cells back to alignmentData + server
 document.getElementById('resultsBody').addEventListener('blur', function(e) {
     const td = e.target;
     if (!td.hasAttribute('data-idx')) return;
@@ -667,6 +667,13 @@ document.getElementById('resultsBody').addEventListener('blur', function(e) {
     } else if (field === 'translation') {
         alignmentData[idx].translation = newVal;
     }
+
+    // Sync edit to server (small payload - avoids 403)
+    fetch('/api/update-field', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idx, field, value: newVal })
+    }).catch(() => {});
 }, true);
 
 // Local translation alignment
@@ -793,7 +800,7 @@ async function reevaluate() {
         const res = await fetch('/api/reevaluate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ alignment_data: alignmentData })
+            body: JSON.stringify({})  // Server uses stored data - avoids 403 from large payload
         });
         if (!res.ok) {
             const text = await res.text();
