@@ -24,7 +24,7 @@ A web-based tool for evaluating Filipino ASR (Automatic Speech Recognition) resu
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/asr-eval.git
+git clone https://github.com/masusbilla4/asr_web_aligner.git
 cd asr-eval
 
 # Install dependencies

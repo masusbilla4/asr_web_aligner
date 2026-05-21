@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filipino ASR Eval - AI Aligner</title>
+    <style>
+        :root {
+            --primary: #1565C0;
+            --primary-dark: #0D47A1;
+            --primary-light: #42A5F5;
+            --secondary: #1976D2;
+            --bg: #F5F7FA;
+            --surface: #FFFFFF;
+            --text: #212121;
+            --text-sec: #757575;
+            --success: #2E7D32;
+            --error: #C62828;
+            --warning: #F57C00;
+            --border: #E0E0E0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); }
+        .container { max-width: 1500px; margin: 0 auto; padding: 25px; }
+
+        /* Cards */
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 15px; }
+        .card-header { padding: 20px; }
+        .card-body { padding: 0 20px 20px; }
+        .card-toggle {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px; cursor: pointer; user-select: none;
+            font-weight: 600; font-size: 0.95rem; color: var(--primary-dark);
+            border-bottom: 1px solid var(--border); transition: background 0.15s;
+        }
+        .card-toggle:hover { background: #F0F4FF; }
+        .card-toggle .arrow { transition: transform 0.2s; font-size: 0.8rem; }
+        .card-toggle.collapsed .arrow { transform: rotate(-90deg); }
+        .card-body.collapsed { display: none; }
+
+        /* Header */
+        h1 { font-size: 1.6rem; color: var(--primary-dark); margin-bottom: 4px; }
+        .subtitle { font-size: 1rem; color: var(--text-sec); }
+
+        /* Text areas */
+        .input-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        .textarea-group { position: relative; }
+        .textarea-label {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 12px; border-radius: 6px 6px 0 0;
+            font-weight: 600; font-size: 0.85rem; color: white;
+        }
+        .label-true { background: var(--primary-light); }
+        .label-asr { background: var(--secondary); }
+        .label-trans { background: var(--success); }
+        .textarea-wrap {
+            display: flex; border: 1px solid var(--border); border-top: none;
+            border-radius: 0 0 6px 6px; overflow: hidden;
+        }
+        .line-numbers {
+            width: 42px; min-height: 120px; padding: 10px 6px;
+            background: #E8EAF0; color: #888; font-family: 'Consolas', monospace;
+            font-size: 0.85rem; text-align: right; user-select: none;
+            overflow: hidden; line-height: 1.45; white-space: pre-line;
+        }
+        textarea {
+            width: 100%; min-height: 120px; padding: 10px 12px;
+            border: none; border-radius: 0;
+            font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem;
+            resize: vertical; outline: none; background: #FAFAFA;
+            line-height: 1.45;
+        }
+        textarea:focus { box-shadow: inset 0 0 0 1px var(--primary); }
+        .textarea-wrap.drag-over { border-color: var(--primary); background: #E3F2FD; }
+        .line-count { font-size: 0.8rem; padding: 4px 12px; color: white; text-align: right; }
+        .count-true { background: var(--primary-light); }
+        .count-asr { background: var(--secondary); }
+        .count-trans { background: var(--success); }
+
+        /* Buttons */
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; padding: 15px 20px; }
+        .btn {
+            padding: 10px 24px; border: none; border-radius: 6px;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer;
+            transition: all 0.15s; color: white;
+        }
+        .btn:hover { filter: brightness(0.9); transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-primary { background: var(--primary); }
+        .btn-success { background: var(--success); }
+        .btn-error { background: var(--error); }
+        .btn-warning { background: var(--warning); }
+
+        /* Progress */
+        .progress-wrap { padding: 0 20px; }
+        .progress-bar { width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--primary); border-radius: 4px; transition: width 0.3s; width: 0%; }
+        .status { padding: 10px 20px 15px; font-size: 0.9rem; color: var(--text-sec); }
+
+        /* Results table */
+        .results-section { display: none; }
+        .results-header { padding: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .results-header h2 { font-size: 1.2rem; color: var(--primary-dark); }
+        .table-wrap { overflow-x: auto; padding: 0 10px 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { background: var(--primary); color: white; padding: 10px 8px; text-align: center; font-weight: 600; position: sticky; top: 0; }
+        td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        tr:nth-child(even) { background: #F8F9FA; }
+        td:first-child { text-align: center; font-weight: 600; }
+        .col-narrow { width: 50px; }
+        .col-wer { width: 65px; text-align: center; }
+        .col-score { width: 70px; text-align: center; }
+        .diff-red { color: #C62828; font-weight: 600; }
+        .diff-blue { color: #1565C0; font-weight: 600; }
+        .score-perfect { color: var(--success); font-weight: 700; }
+        td[contenteditable="true"] { cursor: text; outline: none; }
+        td[contenteditable="true"]:hover { background: #E8F0FE; }
+        td[contenteditable="true"]:focus { background: #FFF9C4; box-shadow: inset 0 0 0 2px var(--primary); }
+
+        /* Modal */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--surface); border-radius: 12px; padding: 30px;
+            max-width: 550px; width: 90%; max-height: 90vh; overflow-y: auto;
+        }
+        .modal h2 { color: var(--primary-dark); margin-bottom: 15px; }
+        .modal label { display: block; font-weight: 600; margin: 12px 0 5px; color: var(--primary); }
+        .modal input, .modal select {
+            width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;
+            font-size: 0.9rem; outline: none;
+        }
+        .modal input:focus, .modal select:focus { border-color: var(--primary); }
+        .guide { font-size: 0.85rem; color: var(--text-sec); line-height: 1.6; margin-top: 8px; }
+        .modal-btns { display: flex; gap: 10px; margin-top: 20px; }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; padding: 14px 24px;
+            border-radius: 8px; color: white; font-weight: 600; z-index: 2000;
+            transform: translateY(100px); opacity: 0; transition: all 0.3s;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-success { background: var(--success); }
+        .toast-error { background: var(--error); }
+        .toast-warning { background: var(--warning); }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border); border-radius: 8px; padding: 25px;
+            text-align: center; cursor: pointer; transition: all 0.2s;
+            background: #FAFAFA; margin-bottom: 10px;
+        }
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--primary); background: #E3F2FD;
+        }
+        .drop-zone-content { color: var(--text-sec); }
+        .drop-zone-content strong { color: var(--primary); }
+        .drop-zone-hint { font-size: 0.8rem; margin-top: 6px; color: var(--text-sec); opacity: 0.7; }
+
+        /* File List */
+        .file-list { background: #F8F9FA; border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+        .file-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 600; font-size: 0.85rem; }
+        .file-item {
+            display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+            border-radius: 4px; font-size: 0.82rem; font-family: 'Consolas', monospace;
+        }
+        .file-item:nth-child(even) { background: #F0F0F0; }
+        .file-item .file-idx { color: var(--text-sec); min-width: 24px; }
+        .file-item .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* Dark mode */
+        body.dark { --bg: #1A1A2E; --surface: #16213E; --text: #E0E0E0; --text-sec: #A0A0B0; --border: #2A2A4A; --primary: #42A5F5; --primary-dark: #90CAF9; --primary-light: #1E88E5; --secondary: #1976D2; --success: #66BB6A; --error: #EF5350; --warning: #FFA726; }
+        body.dark .card { background: var(--surface); border-color: var(--border); }
+        body.dark textarea { background: #0F0F23; color: #E0E0E0; }
+        body.dark .line-numbers { background: #0D0D1F; color: #666; }
+        body.dark table th { background: #1A237E; }
+        body.dark tr:nth-child(even) { background: #1A1A30; }
+        body.dark td { border-bottom-color: #2A2A4A; }
+        body.dark .drop-zone { background: #0F0F23; border-color: #2A2A4A; }
+        body.dark .drop-zone:hover, body.dark .drop-zone.drag-over { background: #1A1A30; border-color: var(--primary); }
+        body.dark .file-list { background: #0F0F23; border-color: #2A2A4A; }
+        body.dark .file-item:nth-child(even) { background: #1A1A30; }
+        body.dark .modal { background: #16213E; color: #E0E0E0; }
+        body.dark .modal input, body.dark .modal select { background: #0F0F23; color: #E0E0E0; border-color: #2A2A4A; }
+        body.dark td[contenteditable="true"]:hover { background: #1A1A40; }
+        body.dark td[contenteditable="true"]:focus { background: #1A2A1A; }
+        body.dark .card-toggle:hover { background: #1A1A30; }
+        body.dark .textarea-label.label-true { background: #1E88E5; }
+        body.dark .textarea-label.label-asr { background: #1565C0; }
+        body.dark .textarea-label.label-trans { background: #2E7D32; }
+        body.dark .line-count { opacity: 0.8; }
+
+        .theme-toggle {
+            position: absolute; top: 20px; right: 20px;
+            background: none; border: 2px solid var(--border); border-radius: 20px;
+            padding: 6px 12px; cursor: pointer; font-size: 1.1rem;
+            transition: all 0.2s; color: var(--text);
+        }
+        .theme-toggle:hover { border-color: var(--primary); }
+
+        /* Responsive */
+        @media (min-width: 900px) {
+            .input-grid { grid-template-columns: 1fr 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- Header -->
+    <div class="card">
+        <div class="card-header" style="position:relative">
+            <h1>🎯 Filipino ASR Evaluation Tool</h1>
+            <div class="subtitle">AI Aligner with Gemini Sentence Evaluation</div>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+        </div>
+    </div>
+
+    <!-- ASR Splitter Drop Zone -->
+    <div class="card">
+        <div class="card-toggle" onclick="toggleSection(this)">📄 ASR Splitter — Drop .txt Files <span class="arrow">▼</span></div>
+        <div class="card-body">
+            <div id="dropZone" class="drop-zone" onclick="document.getElementById('fileInput').click()">
+                <div class="drop-zone-content">
+                    <span style="font-size:2rem">📄</span>
+                    <div><strong>Drop .txt files here</strong> — or click to browse</div>
+                    <div class="drop-zone-hint">Files are sorted A→Z. First half = ASR, Second half = Translation</div>
+                </div>
+            </div>
+            <input type="file" id="fileInput" multiple accept=".txt" style="display:none" onchange="handleFileSelect(event)">
+            <div id="fileList" class="file-list" style="display:none">
+                <div class="file-list-header">
+                    <span id="fileCountLabel">0 files</span>
+                    <button class="btn btn-error" style="padding:4px 12px;font-size:0.75rem" onclick="clearSplitterFiles()">✕ Clear</button>
+                </div>
+                <div id="fileListItems"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input -->
+    <div class="card">
+        <div class="card-toggle" onclick="toggleSection(this)">📝 Input — True Text / ASR / Translation <span class="arrow">▼</span></div>
+        <div class="card-body">
+            <div class="input-grid">
+                <div class="textarea-group">
+                    <div class="textarea-label label-true">📝 True Text (Reference) — drop .txt here</div>
+                    <div class="textarea-wrap" id="trueWrap">
+                        <div class="line-numbers" id="trueLines">1</div>
+                        <textarea id="trueText" placeholder="Paste true text here, or drop a .txt file..."></textarea>
+                    </div>
+                    <div class="line-count count-true" id="trueCount">Lines: 0</div>
+                </div>
+                <div class="textarea-group">
+                    <div class="textarea-label label-asr">🎤 ASR Result (Hypothesis)</div>
+                    <div class="textarea-wrap" id="asrWrap">
+                        <div class="line-numbers" id="asrLines">1</div>
+                        <textarea id="asrText" placeholder="Paste ASR result here, one sentence per line..."></textarea>
+                    </div>
+                    <div class="line-count count-asr" id="asrCount">Lines: 0</div>
+                </div>
+                <div class="textarea-group">
+                    <div class="textarea-label label-trans">🌐 English Translation</div>
+                    <div class="textarea-wrap" id="transWrap">
+                        <div class="line-numbers" id="transLines">1</div>
+                        <textarea id="transText" placeholder="Paste English translation here..."></textarea>
+                    </div>
+                    <div class="line-count count-trans" id="transCount">Lines: 0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Progress Log -->
+    <div class="card" id="logCard" style="display:none">
+        <div class="card-toggle" onclick="toggleSection(this)">
+            📋 AI Processing Log
+            <span style="display:flex;align-items:center;gap:10px">
+                <span id="logStatusBadge" style="font-size:0.75rem;padding:2px 10px;border-radius:10px;background:var(--border);color:var(--text-sec)">Idle</span>
+                <span class="arrow">▼</span>
+            </span>
+        </div>
+        <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span id="logStatus" style="font-weight:600;color:var(--primary);font-size:0.9rem">Idle</span>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span id="logProgress" style="font-size:0.85rem;color:var(--text-sec)">0%</span>
+                    <button id="btnCancelTask" class="btn btn-error" style="padding:4px 14px;font-size:0.8rem;display:none" onclick="cancelAiTask()">🛑 Stop</button>
+                </div>
+            </div>
+            <div style="width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-bottom:10px">
+                <div id="logProgressBar" style="height:100%;background:var(--primary);border-radius:4px;transition:width 0.3s;width:0%"></div>
+            </div>
+            <div id="logPanel" style="background:#1E1E1E;color:#D4D4D4;font-family:'Consolas','Courier New',monospace;font-size:0.8rem;padding:12px;border-radius:6px;max-height:300px;overflow-y:auto;line-height:1.6;white-space:pre-wrap"></div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card">
+        <div class="btn-group">
+            <button class="btn btn-primary" id="btnAlign" onclick="runAlignment()">▶ Align ASR</button>
+            <button class="btn btn-error" onclick="clearAll()">🗑 Clear All</button>
+            <span style="flex:1"></span>
+            <button class="btn btn-success" id="btnResults" onclick="toggleResults()" disabled>📊 Show Results</button>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div></div>
+        <div class="status" id="statusText">Ready to align</div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-section" id="resultsSection">
+        <div class="card">
+            <div class="results-header">
+                <h2 id="resultsTitle">📊 Alignment Results</h2>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="btn btn-success" onclick="exportExcel()">📥 Export Excel</button>
+                    <button class="btn btn-primary" onclick="openModal('transAiModal')">🌐 Align Translation (AI)</button>
+                    <button class="btn btn-success" onclick="reevaluate()">🔄 Re-evaluate</button>
+                </div>
+            </div>
+            <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="col-narrow">No</th>
+                            <th>Test Language</th>
+                            <th>ASR Separated</th>
+                            <th>Differences</th>
+                            <th class="col-wer">WER%</th>
+                            <th class="col-score">AI Score</th>
+                            <th>Translation</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Translation Modal -->
+<div class="modal-overlay" id="transAiModal">
+    <div class="modal">
+        <h2>🌐 AI Translation Alignment</h2>
+        <label>🔑 Gemini API Key</label>
+        <input type="password" id="transApiKey" placeholder="Enter your Gemini API key">
+        <label>🤖 AI Model</label>
+        <select id="transModel">
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+        </select>
+        <div class="modal-btns">
+            <button class="btn btn-primary" onclick="alignTranslationAi()">🌐 Start AI Alignment</button>
+            <button class="btn btn-error" onclick="closeModal('transAiModal')">Cancel</button>
+        </div>
+        <div id="transProgress" style="margin-top:15px;display:none">
+            <div class="progress-bar"><div class="progress-fill" id="transProgressFill"></div></div>
+            <div class="status" id="transStatus">Aligning...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// State
+let alignmentData = [];
+let overallWer = 0;
+let overallStats = {};
+
+// Dark mode toggle
+function toggleTheme() {
+    document.body.classList.toggle('dark');
+    const btn = document.querySelector('.theme-toggle');
+    btn.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+    localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+}
+// Restore saved theme
+if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark');
+    document.querySelector('.theme-toggle').textContent = '☀️';
+}
+
+// Line numbers + counting
+const lineNumIds = { trueText: 'trueLines', asrText: 'asrLines', transText: 'transLines' };
+
+function updateLineNumbers(taId) {
+    const ta = document.getElementById(taId);
+    const lnEl = document.getElementById(lineNumIds[taId]);
+    const lines = ta.value.split('\n');
+    const nums = [];
+    for (let i = 1; i <= lines.length; i++) nums.push(i);
+    lnEl.textContent = nums.join('\n');
+}
+
+function syncScroll(taId) {
+    const ta = document.getElementById(taId);
+    const lnEl = document.getElementById(lineNumIds[taId]);
+    lnEl.scrollTop = ta.scrollTop;
+}
+
+// Init textareas
+Object.keys(lineNumIds).forEach(taId => {
+    const ta = document.getElementById(taId);
+    ta.addEventListener('input', () => { updateLineNumbers(taId); updateLineCounts(); });
+    ta.addEventListener('scroll', () => syncScroll(taId));
+    updateLineNumbers(taId);
+});
+
+function updateLineCounts() {
+    const count = (id) => (document.getElementById(id).value.split('\n').filter(l => l.trim()).length);
+    document.getElementById('trueCount').textContent = `Lines: ${count('trueText')}`;
+    document.getElementById('asrCount').textContent = `Lines: ${count('asrText')}`;
+    document.getElementById('transCount').textContent = `Lines: ${count('transText')}`;
+}
+
+// ========== Drag & Drop on True Text textarea ==========
+const trueWrap = document.getElementById('trueWrap');
+
+trueWrap.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    trueWrap.classList.add('drag-over');
+});
+
+trueWrap.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    trueWrap.classList.remove('drag-over');
+});
+
+trueWrap.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    trueWrap.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.txt'));
+    if (files.length === 0) {
+        showToast('Please drop .txt files only.', 'warning');
+        return;
+    }
+    // Sort alphabetically
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    
+    let allContent = [];
+    for (const f of files) {
+        try {
+            const content = await readFileAsText(f);
+            const lines = content.split('\n').map(l => l.trim()).filter(l => l);
+            allContent.push(...lines);
+        } catch (err) {
+            showToast(`Error reading ${f.name}: ${err.message}`, 'error');
+        }
+    }
+    if (allContent.length > 0) {
+        document.getElementById('trueText').value = allContent.join('\n');
+        updateLineNumbers('trueText');
+        updateLineCounts();
+        showToast(`Loaded ${allContent.length} lines from ${files.length} file(s) into True Text`);
+    }
+});
+
+// Toast
+function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast toast-${type} show`;
+    setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// Progress
+function setProgress(pct, text) {
+    document.getElementById('progressFill').style.width = pct + '%';
+    if (text) document.getElementById('statusText').textContent = text;
+}
+
+// Modals
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// Collapsible sections
+function toggleSection(toggleEl) {
+    toggleEl.classList.toggle('collapsed');
+    const body = toggleEl.nextElementSibling;
+    if (body) body.classList.toggle('collapsed');
+}
+
+// Clear
+function clearAll() {
+    document.getElementById('trueText').value = '';
+    document.getElementById('asrText').value = '';
+    document.getElementById('transText').value = '';
+    alignmentData = [];
+    overallWer = 0;
+    overallStats = {};
+    updateLineCounts();
+    updateLineNumbers('trueText');
+    updateLineNumbers('asrText');
+    updateLineNumbers('transText');
+    setProgress(0, 'Ready to align');
+    document.getElementById('btnResults').disabled = true;
+    document.getElementById('resultsSection').style.display = 'none';
+}
+
+// Run alignment
+async function runAlignment() {
+    const trueText = document.getElementById('trueText').value.trim();
+    const asrText = document.getElementById('asrText').value.trim();
+
+    if (!trueText || !asrText) {
+        showToast('Please input both True Text and ASR Result.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btnAlign');
+    btn.disabled = true;
+    setProgress(10, '⏳ Aligning ASR sentences...');
+
+    try {
+        // First try - may return warning
+        let res = await fetch('/api/align', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ true_text: trueText, asr_text: asrText })
+        });
+        let data = await res.json();
+
+        // Check for mismatch warning
+        if (data.warning) {
+            if (!confirm(data.message + '\n\nContinue anyway?')) {
+                btn.disabled = false;
+                setProgress(0, 'Ready to align');
+                return;
+            }
+            // Force align
+            setProgress(10, '⏳ Aligning (forced)...');
+            res = await fetch('/api/align-force', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ true_text: trueText, asr_text: asrText })
+            });
+            data = await res.json();
+        }
+
+        if (data.error) {
+            showToast(data.error, 'error');
+            setProgress(0, '❌ Alignment failed');
+        } else {
+            alignmentData = data.alignment_data;
+            overallWer = data.overall_wer;
+            overallStats = data.overall_stats;
+            setProgress(100, `✅ Alignment completed — Overall WER: ${overallWer}%`);
+            document.getElementById('btnResults').disabled = false;
+            showToast(`Alignment complete! WER: ${overallWer}%`);
+            renderResults();
+        }
+    } catch (e) {
+        showToast('Network error: ' + e.message, 'error');
+        setProgress(0, '❌ Alignment failed');
+    }
+    btn.disabled = false;
+}
+
+// Render results table
+function renderResults() {
+    const tbody = document.getElementById('resultsBody');
+    tbody.innerHTML = '';
+    alignmentData.forEach((d, idx) => {
+        const tr = document.createElement('tr');
+        const scoreClass = d.ai_score == 3 ? 'score-perfect' : '';
+        tr.innerHTML = `
+            <td>${d.id}</td>
+            <td contenteditable="true" class="editable" data-idx="${idx}" data-field="true" title="Click to edit">${escHtml(d.true)}</td>
+            <td contenteditable="true" class="editable" data-idx="${idx}" data-field="asr_separated" title="Click to edit">${escHtml(d.asr_separated || d.asr_nobreak || '')}</td>
+            <td>${renderDiffs(d.diffs)}</td>
+            <td class="col-wer">${d.wer}</td>
+            <td class="col-score ${scoreClass}" contenteditable="true" data-idx="${idx}" data-field="ai_score" title="Click to edit">${d.ai_score || ''}</td>
+            <td contenteditable="true" class="editable" data-idx="${idx}" data-field="translation" title="Click to edit">${escHtml(d.translation || '')}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    const s = overallStats;
+    document.getElementById('resultsTitle').textContent =
+        `📊 Alignment Results — Overall WER: ${overallWer}% (S:${s.subs} D:${s.dels} I:${s.ins} / ${s.refs} words)`;
+}
+
+function escHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function renderDiffs(diffs) {
+    if (!diffs || !diffs.length) return '';
+    return diffs.map(([color, word]) => {
+        if (color === 'red') return `<span class="diff-red">${escHtml(word)}</span>`;
+        if (color === 'blue') return `<span class="diff-blue">${escHtml(word)}</span>`;
+        return escHtml(word);
+    }).join(' ');
+}
+
+function toggleResults() {
+    const sec = document.getElementById('resultsSection');
+    sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
+}
+
+// Save edits from contenteditable cells back to alignmentData
+document.getElementById('resultsBody').addEventListener('blur', function(e) {
+    const td = e.target;
+    if (!td.hasAttribute('data-idx')) return;
+    const idx = parseInt(td.getAttribute('data-idx'));
+    const field = td.getAttribute('data-field');
+    const newVal = td.textContent.trim();
+    
+    if (field === 'true') {
+        alignmentData[idx].true = newVal;
+    } else if (field === 'asr_separated') {
+        alignmentData[idx].asr_separated = newVal;
+        alignmentData[idx].asr_nobreak = newVal;
+    } else if (field === 'asr') {
+        alignmentData[idx].asr = newVal;
+    } else if (field === 'ai_score') {
+        alignmentData[idx].ai_score = parseFloat(newVal) || '';
+    } else if (field === 'translation') {
+        alignmentData[idx].translation = newVal;
+    }
+}, true);
+
+// Local translation alignment
+async function alignTranslationLocal() {
+    const transText = document.getElementById('transText').value.trim();
+    if (!transText) { showToast('Enter English translation first.', 'warning'); return; }
+    if (!alignmentData.length) { showToast('Run ASR alignment first.', 'warning'); return; }
+
+    setProgress(30, '⏳ Aligning translation (local)...');
+    try {
+        const res = await fetch('/api/align-translation-local', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ translation_text: transText, alignment_data: alignmentData })
+        });
+        const data = await res.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+        alignmentData = data.alignment_data;
+        renderResults();
+        setProgress(100, `✅ Local translation aligned — ${data.count} sentences (method: ${data.method})`);
+        showToast(`Translation aligned: ${data.count} sentences (${data.method})`);
+    } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+    }
+}
+
+// AI translation alignment (now runs in background thread)
+async function alignTranslationAi() {
+    const transText = document.getElementById('transText').value.trim();
+    const apiKey = document.getElementById('transApiKey').value.trim();
+    const model = document.getElementById('transModel').value;
+
+    if (!transText) { showToast('Enter English translation first.', 'warning'); return; }
+    if (!alignmentData.length) { showToast('Run ASR alignment first.', 'warning'); return; }
+    if (!apiKey) { showToast('Enter API key.', 'warning'); return; }
+
+    document.getElementById('transProgress').style.display = 'block';
+    document.getElementById('transProgressFill').style.width = '10%';
+    document.getElementById('transStatus').textContent = '⏳ Starting AI alignment...';
+
+    // Show log card immediately
+    document.getElementById('logCard').style.display = 'block';
+
+    try {
+        const res = await fetch('/api/align-translation-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ translation_text: transText, alignment_data: alignmentData, api_key: apiKey, model })
+        });
+        const data = await res.json();
+        if (data.error) { 
+            showToast(data.error, 'error'); 
+            document.getElementById('transStatus').textContent = '❌ ' + data.error;
+            return; 
+        }
+        
+        // Task started - start polling
+        startLogPolling();
+        document.getElementById('transStatus').textContent = '⏳ AI processing in background...';
+        document.getElementById('resultsSection').style.display = 'block';
+        closeModal('transAiModal');
+        showToast('AI alignment started — watch the log panel for progress');
+    } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+        document.getElementById('transStatus').textContent = '❌ ' + e.message;
+    }
+}
+
+// Load partial results from server
+async function loadPartialResults() {
+    try {
+        const res = await fetch('/api/partial-results');
+        if (!res.ok) { showToast('No partial results available yet.', 'warning'); return; }
+        const data = await res.json();
+        alignmentData = data.alignment_data;
+        renderResults();
+        const status = data.running ? `⏳ ${data.count} sentences so far (still running...)` : `✅ ${data.count} sentences aligned`;
+        document.getElementById('transStatus').textContent = status;
+        setProgress(data.running ? 60 : 100, `AI Translation: ${data.count} sentences${data.running ? ' (in progress)' : ''}`);
+        showToast(`Loaded ${data.count} translation results${data.running ? ' (partial)' : ''}`);
+    } catch (e) {
+        showToast('Error loading results: ' + e.message, 'error');
+    }
+}
+
+// AI evaluation
+async function runAiEvaluation() {
+    const apiKey = document.getElementById('evalApiKey').value.trim();
+    const model = document.getElementById('evalModel').value;
+
+    if (!alignmentData.length) { showToast('Run alignment first.', 'warning'); return; }
+    if (!apiKey) { showToast('Enter API key.', 'warning'); return; }
+
+    document.getElementById('evalProgress').style.display = 'block';
+    document.getElementById('evalProgressFill').style.width = '10%';
+    document.getElementById('evalStatus').textContent = '⏳ Evaluating sentences...';
+    startLogPolling();
+
+    try {
+        const res = await fetch('/api/evaluate-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alignment_data: alignmentData, api_key: apiKey, model })
+        });
+        const data = await res.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+        alignmentData = data.alignment_data;
+        renderResults();
+        document.getElementById('evalProgressFill').style.width = '100%';
+        document.getElementById('evalStatus').textContent = `✅ Evaluated ${data.evaluated_count} sentences`;
+        setProgress(100, `✅ AI evaluation completed — ${data.evaluated_count} sentences scored`);
+        showToast(`AI evaluation complete: ${data.evaluated_count} sentences`);
+        setTimeout(() => closeModal('evalModal'), 1500);
+    } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+    }
+}
+
+// Re-evaluate (recalculate diffs/WER after editing)
+async function reevaluate() {
+    if (!alignmentData.length) { showToast('No data to re-evaluate.', 'warning'); return; }
+    setProgress(30, '⏳ Re-evaluating differences and scores...');
+    try {
+        const res = await fetch('/api/reevaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alignment_data: alignmentData })
+        });
+        const data = await res.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+        alignmentData = data.alignment_data;
+        overallWer = data.overall_wer;
+        overallStats = data.overall_stats;
+        renderResults();
+        setProgress(100, `✅ Re-evaluated — Overall WER: ${overallWer}%`);
+        showToast(`Re-evaluated! WER: ${overallWer}%`);
+    } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+    }
+}
+
+// Export Excel
+async function exportExcel() {
+    if (!alignmentData.length) { showToast('No data to export.', 'warning'); return; }
+    try {
+        const res = await fetch('/api/export-excel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alignment_data: alignmentData, overall_wer: overallWer, overall_stats: overallStats })
+        });
+        if (!res.ok) { const d = await res.json(); showToast(d.error || 'Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'ASR_Evaluation.xlsx'; a.click();
+        URL.revokeObjectURL(url);
+        showToast('Excel exported!');
+    } catch (e) { showToast('Export error: ' + e.message, 'error'); }
+}
+
+// Export JSON
+async function exportJSON() {
+    if (!alignmentData.length) { showToast('No data to export.', 'warning'); return; }
+    try {
+        const res = await fetch('/api/export-json', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alignment_data: alignmentData, overall_wer: overallWer })
+        });
+        if (!res.ok) { const d = await res.json(); showToast(d.error || 'Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'ASR_Evaluation.json'; a.click();
+        URL.revokeObjectURL(url);
+        showToast('JSON exported!');
+    } catch (e) { showToast('Export error: ' + e.message, 'error'); }
+}
+
+// ========== ASR SPLITTER - Drag & Drop File Processing ==========
+let splitterFiles = [];
+
+// Drag & drop events on the drop zone
+const dropZone = document.getElementById('dropZone');
+
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add('drag-over');
+});
+
+dropZone.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('drag-over');
+});
+
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.txt'));
+    if (files.length === 0) {
+        showToast('Please drop .txt files only.', 'warning');
+        return;
+    }
+    processSplitterFiles(files);
+});
+
+// File input change handler
+function handleFileSelect(event) {
+    const files = Array.from(event.target.files).filter(f => f.name.toLowerCase().endsWith('.txt'));
+    if (files.length === 0) {
+        showToast('Please select .txt files only.', 'warning');
+        return;
+    }
+    processSplitterFiles(files);
+    // Reset input so same file can be re-selected
+    event.target.value = '';
+}
+
+// Process dropped/selected files
+async function processSplitterFiles(files) {
+    // Sort alphabetically by filename
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    
+    splitterFiles = files;
+    
+    // Show file list
+    const fileListEl = document.getElementById('fileList');
+    const fileListItems = document.getElementById('fileListItems');
+    fileListEl.style.display = 'block';
+    document.getElementById('fileCountLabel').textContent = `${files.length} file${files.length > 1 ? 's' : ''} (sorted A→Z)`;
+    
+    fileListItems.innerHTML = '';
+    files.forEach((f, i) => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        item.innerHTML = `<span class="file-idx">${i+1}.</span><span class="file-name">📄 ${escHtml(f.name)}</span>`;
+        fileListItems.appendChild(item);
+    });
+
+    setProgress(20, `⏳ Processing ${files.length} file(s)...`);
+
+    // Read all files and split
+    let allAsrLines = [];
+    let allTransLines = [];
+
+    for (let i = 0; i < files.length; i++) {
+        try {
+            const content = await readFileAsText(files[i]);
+            const lines = content.split('\n');
+            const midpoint = Math.floor(lines.length / 2);
+            
+            const firstHalf = lines.slice(0, midpoint).map(l => l.trim()).filter(l => l);
+            const secondHalf = lines.slice(midpoint).map(l => l.trim()).filter(l => l);
+            
+            allAsrLines.push(...firstHalf);
+            allTransLines.push(...secondHalf);
+        } catch (e) {
+            showToast(`Error reading ${files[i].name}: ${e.message}`, 'error');
+        }
+    }
+
+    // Populate textareas
+    if (allAsrLines.length > 0) {
+        document.getElementById('asrText').value = allAsrLines.join('\n');
+        updateLineNumbers('asrText');
+    }
+    if (allTransLines.length > 0) {
+        document.getElementById('transText').value = allTransLines.join('\n');
+        updateLineNumbers('transText');
+    }
+
+    updateLineCounts();
+    setProgress(100, `✅ Split ${files.length} file(s) — ${allAsrLines.length} ASR lines, ${allTransLines.length} Translation lines`);
+    showToast(`Split complete: ${allAsrLines.length} ASR + ${allTransLines.length} Translation lines from ${files.length} file(s)`);
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(e);
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+function clearSplitterFiles() {
+    splitterFiles = [];
+    document.getElementById('fileList').style.display = 'none';
+    document.getElementById('fileListItems').innerHTML = '';
+    document.getElementById('fileCountLabel').textContent = '0 files';
+}
+
+// Cancel AI task
+async function cancelAiTask() {
+    const btn = document.getElementById('btnCancelTask');
+    btn.textContent = '⏳ Stopping...';
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/cancel', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'cancelled') {
+            showToast(`Task cancelled. ${data.partial_count} results saved.`, 'warning');
+            // Load any partial results
+            if (data.partial_count > 0) {
+                try {
+                    const prRes = await fetch('/api/partial-results');
+                    if (prRes.ok) {
+                        const prData = await prRes.json();
+                        alignmentData = prData.alignment_data;
+                        renderResults();
+                        document.getElementById('resultsSection').style.display = 'block';
+                        setProgress(100, `🛑 Cancelled — ${prData.count} sentences saved`);
+                    }
+                } catch(e2) {}
+            }
+        } else {
+            showToast('No task running.', 'warning');
+        }
+    } catch (e) {
+        // Even if fetch fails, force-stop the UI
+        showToast('Stop requested.', 'warning');
+        if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null; }
+        document.getElementById('btnCancelTask').style.display = 'none';
+        document.getElementById('logStatusBadge').textContent = 'Stopped';
+        document.getElementById('logStatusBadge').style.background = 'var(--warning)';
+    }
+    btn.textContent = '🛑 Stop';
+    btn.disabled = false;
+}
+
+// ========== AI Progress Log Polling ==========
+let _lastLogCount = 0;
+let _lastPartialCount = 0;
+let _logPollTimer = null;
+let _pollSeenRunning = false;
+
+function startLogPolling() {
+    document.getElementById('logCard').style.display = 'block';
+    _lastLogCount = 0;
+    _lastPartialCount = 0;
+    _pollSeenRunning = false;
+    if (_logPollTimer) clearInterval(_logPollTimer);
+    _logPollTimer = setInterval(pollProgress, 1500);
+    pollProgress();
+}
+
+function stopLogPolling() {
+    if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null; }
+    pollProgress();
+}
+
+async function pollProgress() {
+    try {
+        const res = await fetch('/api/progress');
+        const data = await res.json();
+        
+        // Update progress bar
+        document.getElementById('logProgressBar').style.width = data.progress + '%';
+        document.getElementById('logProgress').textContent = data.progress + '%';
+        document.getElementById('logStatus').textContent = data.status || 'Idle';
+        document.getElementById('logStatus').style.color = data.running ? 'var(--primary)' : 'var(--success)';
+        
+        // Track if we've ever seen running=true
+        if (data.running) _pollSeenRunning = true;
+        
+        // Show/hide stop button and update badge
+        document.getElementById('btnCancelTask').style.display = data.running ? 'inline-block' : 'none';
+        const badge = document.getElementById('logStatusBadge');
+        if (data.running) {
+            badge.textContent = 'Running';
+            badge.style.background = 'var(--primary)';
+            badge.style.color = 'white';
+        } else if (data.status === 'Cancelled') {
+            badge.textContent = 'Cancelled';
+            badge.style.background = 'var(--warning)';
+            badge.style.color = 'white';
+        } else if (data.progress >= 100) {
+            badge.textContent = 'Done';
+            badge.style.background = 'var(--success)';
+            badge.style.color = 'white';
+        } else {
+            badge.textContent = 'Idle';
+            badge.style.background = 'var(--border)';
+            badge.style.color = 'var(--text-sec)';
+        }
+        
+        // Update log panel (only new logs)
+        if (data.logs.length > _lastLogCount) {
+            const newLogs = data.logs.slice(_lastLogCount);
+            _lastLogCount = data.logs.length;
+            const panel = document.getElementById('logPanel');
+            newLogs.forEach(log => {
+                panel.textContent += log + '\n';
+            });
+            panel.scrollTop = panel.scrollHeight;
+        }
+        
+        // Auto-load partial results into table when count changes
+        if (data.partial_count > 0 && data.partial_count !== _lastPartialCount) {
+            _lastPartialCount = data.partial_count;
+            try {
+                const prRes = await fetch('/api/partial-results');
+                if (prRes.ok) {
+                    const prData = await prRes.json();
+                    alignmentData = prData.alignment_data;
+                    renderResults();
+                    document.getElementById('resultsSection').style.display = 'block';
+                    document.getElementById('btnResults').disabled = false;
+                    const label = prData.running ? `⏳ ${prData.count} sentences (in progress...)` : `✅ ${prData.count} sentences`;
+                    document.getElementById('transStatus').textContent = label;
+                    setProgress(prData.running ? 60 : 100, `AI: ${prData.count} sentences${prData.running ? ' (in progress)' : ''}`);
+                }
+            } catch(e) {}
+        }
+        
+        // Stop polling only if not running AND we've seen it running at least once
+        if (!data.running && _pollSeenRunning && _logPollTimer) {
+            clearInterval(_logPollTimer);
+            _logPollTimer = null;
+            // Final result load
+            if (data.partial_count > 0) {
+                try {
+                    const prRes = await fetch('/api/partial-results');
+                    if (prRes.ok) {
+                        const prData = await prRes.json();
+                        alignmentData = prData.alignment_data;
+                        renderResults();
+                        document.getElementById('resultsSection').style.display = 'block';
+                        document.getElementById('transProgressFill').style.width = '100%';
+                        document.getElementById('transStatus').textContent = `✅ ${prData.count} sentences aligned`;
+                        setProgress(100, `✅ AI complete — ${prData.count} sentences`);
+                        showToast(`AI complete: ${prData.count} sentences`);
+                    }
+                } catch(e) {}
+            }
+        }
+    } catch (e) {
+        // Silently ignore polling errors
+    }
+}
+</script>
+</body>
+</html>
